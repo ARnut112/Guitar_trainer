@@ -12,6 +12,8 @@ const FAMILIES = [
   { id: '7', suffix: '7', name: 'โดมิแนนต์ 7', feeling: 'ชวนให้คลี่คลายไปคอร์ดถัดไป', intervals: [0, 4, 7, 10], degrees: [0, 2, 4, 6], formula: '1 · 3 · 5 · ♭7' },
   { id: 'maj7', suffix: 'maj7', name: 'เมเจอร์ 7', feeling: 'ละมุน โปร่ง มีสีสัน', intervals: [0, 4, 7, 11], degrees: [0, 2, 4, 6], formula: '1 · 3 · 5 · 7' },
   { id: 'm7', suffix: 'm7', name: 'ไมเนอร์ 7', feeling: 'อบอุ่น นุ่มนวล', intervals: [0, 3, 7, 10], degrees: [0, 2, 4, 6], formula: '1 · ♭3 · 5 · ♭7' },
+  { id: 'dim', suffix: 'dim', name: 'ดิมินิชท์', feeling: 'ตึงเครียด ช่วยเชื่อมคอร์ดด้วยเสียงที่ขยับทีละครึ่งเสียง', intervals: [0, 3, 6], degrees: [0, 2, 4], formula: '1 · ♭3 · ♭5' },
+  { id: 'dim7', suffix: 'dim7', name: 'ดิมินิชท์ 7', feeling: 'เสียงห่างกันคู่ 3 ไมเนอร์ทุกขั้น เหมาะกับการเชื่อมคอร์ด', intervals: [0, 3, 6, 9], degrees: [0, 2, 4, 6], formula: '1 · ♭3 · ♭5 · ♭♭7' },
   { id: 'sus2', suffix: 'sus2', name: 'ซัส 2', feeling: 'โปร่ง ใช้โน้ต 2 แทนโน้ต 3', intervals: [0, 2, 7], degrees: [0, 1, 4], formula: '1 · 2 · 5' },
   { id: 'sus4', suffix: 'sus4', name: 'ซัส 4', feeling: 'ค้างรอ ใช้โน้ต 4 แทนโน้ต 3', intervals: [0, 5, 7], degrees: [0, 3, 4], formula: '1 · 4 · 5' }
 ];
@@ -59,9 +61,34 @@ const A_SHAPES = {
   sus4: [[-1, 0, 2, 2, 3, 0], [null, 1, 2, 3, 4, 1]]
 };
 
+// Compact voicings retain every chord tone, with the root as the lowest note.
+// They use independent fingers rather than extending a major/minor barre shape.
+function diminishedShapes(root, family) {
+  const seventh = family.id === 'dim7';
+  return [{ base: 9, string: 5 }, { base: 2, string: 4 }].map(({ base, string }) => {
+    const fret = ((root.pc - base + 12) % 12) || 12;
+    const frets = string === 5
+      ? [-1, fret, fret + 1, fret + (seventh ? -1 : 2), fret + 1, -1]
+      : [-1, -1, fret, fret + 1, fret + (seventh ? 0 : 3), fret + 1];
+    const fingers = string === 5
+      ? (seventh ? [null, 2, 3, 1, 4, null] : [null, 1, 2, 4, 3, null])
+      : (seventh ? [null, null, 1, 3, 2, 4] : [null, null, 1, 2, 4, 3]);
+    return {
+      id: `compact-${string}`, label: `เบสสาย ${string} · เฟรต ${fret}`,
+      kind: frets.includes(0) ? 'open' : 'movable', frets,
+      fingers: fingers.map((finger, index) => frets[index] === 0 ? 0 : finger), barres: [],
+      description: `วางโน้ตหลักที่สาย ${string} เฟรต ${fret} แล้วดีด${string === 5 ? 'เฉพาะสาย 5–2 เว้นสาย 6 และ 1' : 'เฉพาะสาย 4–1 เว้นสาย 6 และ 5'} รูปนี้ใช้นิ้วแยก ไม่ต้องทาบทั้งคอ ผ่อนมือเมื่อเริ่มเกร็ง`
+    };
+  });
+}
+
 function createLibrary() {
   return ROOTS.flatMap(root => FAMILIES.map(family => {
     const chord = { id: `${root.pc}-${family.id}`, root, family, name: root.name + family.suffix, notes: spelling(root, family), shapes: [] };
+    if (family.id === 'dim' || family.id === 'dim7') {
+      chord.shapes = diminishedShapes(root, family);
+      return chord;
+    }
     const open = OPEN_SHAPES[root.name]?.[family.id];
     if (open) chord.shapes.push({ id: 'open', label: 'ตำแหน่งเปิด', kind: 'open', frets: open[0], fingers: open[1], barres: open[2] || [], description: 'ใช้สายเปิดช่วยให้เสียงกังวาน วางนิ้วชิดด้านหลังเฟรต แล้วดีดเฉพาะสายที่ไม่มีกากบาท' + (root.name === 'C' && family.id === '7' ? ' รูป C7 นี้ละโน้ต G (ตัว 5) โดยยังคงโน้ตหลักและสีสันของคอร์ดครบ' : '') });
     for (const [form, basePc, patterns, from] of [['E', 4, E_SHAPES, 0], ['A', 9, A_SHAPES, 1]]) {
@@ -77,7 +104,7 @@ function createLibrary() {
 }
 const LIBRARY = createLibrary();
 const escapeHTML = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
-const normalize = value => String(value).toLowerCase().replaceAll('♯', '#').replaceAll('♭', 'b').replace(/\s/g, '');
+const normalize = value => String(value).toLowerCase().replaceAll('♯', '#').replaceAll('♭', 'b').replace(/[°º]/g, 'dim').replace(/\s/g, '');
 function midiFor(shape) { return shape.frets.flatMap((fret, index) => fret >= 0 ? [OPEN_MIDI[index] + fret] : []); }
 function noteName(midi, chord, octave = false) {
   const pc = midi % 12;
@@ -127,14 +154,14 @@ export function renderChords(container, { audio, record = () => {} } = {}) {
   const filters = { search: '', family: '', root: '', kind: '' };
 
   container.innerHTML = `<div class="chord-page">
-    <section class="chord-intro"><div><p class="eyebrow">CHORD LIBRARY</p><h1>ทุกคอร์ด มีทางจับที่เข้ามือ</h1><p class="muted">ฟังให้คุ้น จับให้ชัด แล้วเชื่อมคอร์ดให้เป็นเพลง เริ่มจากรูปเปิดและค่อยขยับไปคอร์ดทาบ</p></div><span class="chord-count-tag">84 คอร์ด · หลายตำแหน่ง</span></section>
+    <section class="chord-intro"><div><p class="eyebrow">CHORD LIBRARY</p><h1>ทุกคอร์ด มีทางจับที่เข้ามือ</h1><p class="muted">ฟังให้คุ้น จับให้ชัด แล้วเชื่อมคอร์ดให้เป็นเพลง เริ่มจากรูปเปิดและค่อยขยับไปคอร์ดทาบ</p></div><span class="chord-count-tag">${LIBRARY.length} คอร์ด · หลายตำแหน่ง</span></section>
     <div class="chord-workspace">
       <section class="panel chord-catalog" aria-label="ค้นหาคอร์ด">
-        <label class="chord-search-label" for="${uid}-search">ค้นหาคอร์ด</label><div class="chord-search-wrap"><span aria-hidden="true">⌕</span><input id="${uid}-search" class="chord-search" type="search" placeholder="ลอง C, Am, F# หรือ maj7" autocomplete="off" data-filter="search"/></div>
+        <label class="chord-search-label" for="${uid}-search">ค้นหาคอร์ด</label><div class="chord-search-wrap"><span aria-hidden="true">⌕</span><input id="${uid}-search" class="chord-search" type="search" placeholder="ลอง Am, Cdim หรือ C#dim7" autocomplete="off" data-filter="search"/></div>
         <div class="chord-filters">
           <label>โน้ตหลัก<select class="select" data-filter="root"><option value="">ทุกโน้ต</option>${ROOTS.map(root => `<option value="${root.pc}">${root.name}</option>`).join('')}</select></label>
           <label>ชนิดคอร์ด<select class="select" data-filter="family"><option value="">ทุกชนิด</option>${FAMILIES.map(family => `<option value="${family.id}">${family.suffix || 'Major'} · ${family.name}</option>`).join('')}</select></label>
-          <label class="chord-position-filter">รูปแบบ<select class="select" data-filter="kind"><option value="">ทุกตำแหน่ง</option><option value="open">ใช้สายเปิด</option><option value="barre">คอร์ดทาบ</option></select></label>
+          <label class="chord-position-filter">รูปแบบ<select class="select" data-filter="kind"><option value="">ทุกตำแหน่ง</option><option value="open">ใช้สายเปิด</option><option value="barre">คอร์ดทาบ</option><option value="movable">รูปเลื่อนไม่ทาบ</option></select></label>
         </div>
         <div class="chord-results-heading"><span data-result-count></span><button type="button" class="chord-text-button" data-action="reset">ล้างตัวกรอง</button></div>
         <div class="chord-results" data-results aria-label="รายชื่อคอร์ด"></div>
@@ -186,9 +213,10 @@ export function renderChords(container, { audio, record = () => {} } = {}) {
   function renderDetail() {
     const shapes = availableShapes(selected).length ? availableShapes(selected) : selected.shapes;
     const notes = selected.notes.map(note => `<span>${note.name}</span>`).join('');
+    const diminishedTip = selected.family.id === 'dim7' ? '<p class="chord-shape-description">♭♭7 คือโน้ตตัวที่ 7 ลดลงสองครึ่งเสียง เช่น B♭♭ ใน Cdim7 ให้เสียงเดียวกับ A ค่ะ</p>' : '';
     find('[data-detail]').innerHTML = `<div class="chord-detail-heading"><div><p class="eyebrow">${selected.family.name}</p><h3>${selected.name}</h3><p class="muted">${selected.family.feeling}</p></div><span class="chord-shape-count">${selected.shapes.length} รูปจับ</span></div>
       <div class="chord-shape-tabs" role="group" aria-label="เลือกรูปจับคอร์ด">${shapes.map(shape => `<button type="button" class="chord-shape-tab${shape.id === selectedShape.id ? ' is-selected' : ''}" data-shape="${shape.id}" aria-pressed="${shape.id === selectedShape.id}">${shape.label}</button>`).join('')}</div>
-      <div class="chord-detail-body"><div class="chord-diagram-wrap">${diagram(selected, selectedShape)}<p class="chord-diagram-key">× ไม่ดีด &nbsp; ○ สายเปิด &nbsp; 1–4 นิ้วชี้ถึงนิ้วก้อย</p></div><div class="chord-voicing-info"><p class="chord-info-label">โน้ตในคอร์ด</p><div class="chord-note-chips">${notes}</div><p class="chord-formula">${selected.family.formula}</p><p class="chord-shape-description">${selectedShape.description}</p><div class="chord-sound-actions"><button type="button" class="btn btn-primary" data-action="strum">♫ ฟังเสียงคอร์ด</button><button type="button" class="btn btn-secondary" data-action="arpeggio">แยกเสียงทีละสาย</button></div><button type="button" class="chord-add-button" data-action="add">+ เพิ่ม ${selected.name} ในวงคอร์ด</button></div></div>
+      <div class="chord-detail-body"><div class="chord-diagram-wrap">${diagram(selected, selectedShape)}<p class="chord-diagram-key">× ไม่ดีด &nbsp; ○ สายเปิด &nbsp; 1–4 นิ้วชี้ถึงนิ้วก้อย</p></div><div class="chord-voicing-info"><p class="chord-info-label">โน้ตในคอร์ด</p><div class="chord-note-chips">${notes}</div><p class="chord-formula">${selected.family.formula}</p>${diminishedTip}<p class="chord-shape-description">${selectedShape.description}</p><div class="chord-sound-actions"><button type="button" class="btn btn-primary" data-action="strum">♫ ฟังเสียงคอร์ด</button><button type="button" class="btn btn-secondary" data-action="arpeggio">แยกเสียงทีละสาย</button></div><button type="button" class="chord-add-button" data-action="add">+ เพิ่ม ${selected.name} ในวงคอร์ด</button></div></div>
       <div class="chord-string-samples" role="group" aria-label="ฟังเสียงแต่ละสาย">${selectedShape.frets.map((fret, index) => `<button type="button" data-string="${index}" class="chord-string-button" ${fret < 0 ? 'disabled' : ''} aria-label="${fret < 0 ? `สาย ${6 - index} ไม่ดีด` : `ฟังสาย ${6 - index} โน้ต ${noteName(OPEN_MIDI[index] + fret, selected, true)}`} "><span>สาย ${6 - index}</span><strong>${fret < 0 ? '×' : noteName(OPEN_MIDI[index] + fret, selected, true)}</strong><small>${fret < 0 ? 'ไม่ดีด' : fret === 0 ? 'สายเปิด' : `เฟรต ${fret}`}</small></button>`).join('')}</div>
       <div class="chord-grip-practice"><div><strong>ให้มือค่อย ๆ จำรูปคอร์ด</strong><span>จับ → ดีดทีละสาย → ผ่อนมือ แล้วทำซ้ำ 30 วินาที</span></div><button type="button" class="btn btn-secondary" data-action="practice">เริ่มฝึก 30 วินาที</button></div><p class="chord-status" role="status" aria-live="polite" data-detail-status>แตะชื่อโน้ตด้านล่างแผนภาพเพื่อฟังแต่ละสาย</p>`;
   }

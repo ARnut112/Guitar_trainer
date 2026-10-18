@@ -4,9 +4,9 @@ import { CHORD_LIBRARY, renderChordDiagram } from '../chords.js';
 
 const tuning = [40, 45, 50, 55, 59, 64];
 
-test('all 84 chord names have valid voicings and no foreign chord tones', () => {
-  assert.equal(CHORD_LIBRARY.length, 84);
-  assert.equal(new Set(CHORD_LIBRARY.map(chord => chord.name)).size, 84);
+test('all 108 chord names have valid voicings and no foreign chord tones', () => {
+  assert.equal(CHORD_LIBRARY.length, 108);
+  assert.equal(new Set(CHORD_LIBRARY.map(chord => chord.name)).size, 108);
   for (const chord of CHORD_LIBRARY) {
     const expected = chord.family.intervals.map(interval => (chord.root.pc + interval) % 12).sort((a, b) => a - b);
     assert.deepEqual(chord.notes.map(note => note.pc).sort((a, b) => a - b), expected, `${chord.name}: spelling`);
@@ -39,6 +39,35 @@ test('music spelling keeps diatonic chord names across sharp and flat roots', ()
   assert.deepEqual(names('F♯maj7'), ['F♯', 'A♯', 'C♯', 'E♯']);
   assert.deepEqual(names('B♭7'), ['B♭', 'D', 'F', 'A♭']);
   assert.deepEqual(names('Dsus4'), ['D', 'G', 'A']);
+  assert.deepEqual(names('Cdim'), ['C', 'E♭', 'G♭']);
+  assert.deepEqual(names('Cdim7'), ['C', 'E♭', 'G♭', 'B♭♭']);
+  assert.deepEqual(names('C♯dim7'), ['C♯', 'E', 'G', 'B♭']);
+  assert.deepEqual(names('E♭dim7'), ['E♭', 'G♭', 'B♭♭', 'D♭♭']);
+});
+
+test('dim and fully diminished seventh cover every root with complete compact voicings', () => {
+  for (const [family, intervals] of [['dim', [0, 3, 6]], ['dim7', [0, 3, 6, 9]]]) {
+    const chords = CHORD_LIBRARY.filter(chord => chord.family.id === family);
+    assert.equal(chords.length, 12);
+    assert.equal(new Set(chords.map(chord => chord.root.pc)).size, 12);
+    for (const chord of chords) {
+      assert.deepEqual(chord.family.intervals, intervals);
+      assert.deepEqual(chord.shapes.map(shape => shape.id), ['compact-5', 'compact-4']);
+      for (const shape of chord.shapes) {
+        const midis = shape.frets.flatMap((fret, string) => fret < 0 ? [] : [tuning[string] + fret]);
+        const expected = intervals.map(interval => (chord.root.pc + interval) % 12).sort((a, b) => a - b);
+        assert.deepEqual([...new Set(midis.map(midi => midi % 12))].sort((a, b) => a - b), expected, `${chord.name} ${shape.id}: every diminished tone`);
+        assert.equal(Math.min(...midis) % 12, chord.root.pc, `${chord.name}: root in bass`);
+        assert.deepEqual(shape.barres, []);
+        assert.equal(shape.kind, shape.frets.includes(0) ? 'open' : 'movable');
+        const fretted = shape.frets.filter(fret => fret > 0);
+        assert.ok(Math.max(...fretted) - Math.min(...fretted) <= 3);
+        shape.frets.forEach((fret, string) => { if (fret === 0) assert.equal(shape.fingers[string], 0); });
+        const usedFingers = shape.frets.flatMap((fret, string) => fret > 0 ? [shape.fingers[string]] : []);
+        assert.equal(new Set(usedFingers).size, usedFingers.length, `${chord.name}: independent fingers`);
+      }
+    }
+  }
 });
 
 test('SVG diagrams preserve low E on the left and communicate frets and fingering', () => {

@@ -64,7 +64,7 @@ export function renderPractice(container, { audio, record = () => {} }) {
           <div class="practice-tab-scroll" tabindex="0" aria-label="แท็บกีตาร์ เลื่อนแนวนอนได้"><table class="practice-tab" data-tab aria-label="แท็บอาร์เพจจิโอคอร์ด C"></table></div>
           <div class="practice-tab-legend"><span><i class="practice-key-note"></i> สายที่ดีด</span><span><i class="practice-key-active"></i> กำลังเล่น</span><span>P = โป้ง · I = ชี้ · M = กลาง · A = นาง</span></div>
           <div class="practice-transport"><button type="button" class="btn btn-primary practice-play" data-play><span aria-hidden="true">▶</span> เริ่มฝึก</button><button type="button" class="btn btn-secondary" data-stop disabled><span aria-hidden="true">■</span> หยุด</button><div class="practice-transport-progress"><span data-bar>ห้อง 1 / 4</span><div class="practice-progress-track" role="progressbar" aria-label="ความคืบหน้าของวลี" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-progress><span></span></div></div></div>
-          <p class="practice-status" data-status role="status" aria-live="polite">พร้อมแล้วน้องนัด เริ่มที่ความเร็วสบาย ๆ แล้วฟังให้ครบทั้ง 4 ห้องนะ</p>
+          <p class="practice-status" data-status role="status" aria-live="polite">พร้อมแล้ว เริ่มที่ความเร็วสบาย ๆ แล้วฟังให้ครบทั้ง 4 ห้องนะคะ</p>
         </section>
         <aside class="practice-sidebar">
           <section class="panel practice-tempo-panel" aria-label="ตั้งค่าจังหวะ"><div class="practice-small-heading"><span class="eyebrow">KEEP THE PULSE</span><span class="practice-pulse" data-pulse aria-hidden="true"></span></div><div class="practice-tempo-value"><button type="button" data-slower aria-label="ลดความเร็ว 5 BPM">−</button><div><strong data-bpm>72</strong><span>BPM</span></div><button type="button" data-faster aria-label="เพิ่มความเร็ว 5 BPM">+</button></div><input type="range" min="40" max="160" value="72" data-tempo aria-label="ความเร็ว 40 ถึง 160 BPM"><div class="practice-tempo-scale"><span>40 · ช้า</span><span>160 · เร็ว</span></div><div class="practice-tempo-foot"><span data-beat-unit>1 คลิก = โน้ตดำ</span><button type="button" class="practice-tap" data-tap>แตะตามจังหวะ</button></div><div class="practice-options"><label><input type="checkbox" checked data-loop><span>วนทั้ง 4 ห้อง</span><span aria-hidden="true">↻</span></label><label><input type="checkbox" checked data-click><span>เสียงเมโทรนอม</span><span aria-hidden="true">♩</span></label><label><input type="checkbox" checked data-count><span>นับเข้าก่อนเริ่ม</span><span data-count-beats>4 จังหวะ</span></label></div></section>
@@ -160,7 +160,7 @@ export function renderPractice(container, { audio, record = () => {} }) {
       running = false; paused = false; completionQueued = false; nextPosition = 0;
       clearInterval(scheduler); scheduler = null;
       highlight(-1); setProgress(totalSteps()); controls();
-      status('ครบทั้ง 4 ห้องแล้วน้องนัด! พักมือสักครู่ หรือเริ่มอีกวลีเมื่อพร้อม');
+      status('ครบทั้ง 4 ห้องแล้วค่ะ! พักมือสักครู่ หรือเริ่มอีกวลีเมื่อพร้อม');
     } else status(`เล่นครบ ${completedPhrases} วลีแล้ว กำลังวนกลับห้องแรก ลองรักษาเสียงให้ต่อเนื่องนะ`);
   };
   const tick = () => {

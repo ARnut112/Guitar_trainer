@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderFretboard } from '../fretboard.js';
 import { STRINGS, noteAt, midiToNote } from '../music.js';
+import { getDailyPlan } from '../learning.js';
 
 class Element {
   constructor(registry, dataset = {}, isRoot = false) {
@@ -53,7 +54,7 @@ class Element {
 }
 
 let queryCount = 0;
-function fixture(t, preferences = {}, initialRandom = .9999) {
+function fixture(t, preferences = {}, initialRandom = .9999, exercise) {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
   const originalRandom = Math.random;
   const listeners = new Set();
@@ -74,7 +75,7 @@ function fixture(t, preferences = {}, initialRandom = .9999) {
   };
   const store = { data: { preferences: { range: 5, strings: 'all', notes: 'natural', ...preferences } }, preference: (...args) => preferencesSaved.push(args) };
   let micStarts = 0;
-  const cleanup = renderFretboard(container, { audio, store, record: (...args) => records.push(args), onMicStart: () => { micStarts += 1; } });
+  const cleanup = renderFretboard(container, { audio, store, exercise, record: (...args) => records.push(args), onMicStart: () => { micStarts += 1; } });
   t.after(() => { cleanup(); Math.random = originalRandom; if (descriptor) Object.defineProperty(globalThis, 'document', descriptor); else delete globalThis.document; });
   return {
     audio, records, preferencesSaved, q, container, cleanup, listeners, document,
@@ -225,4 +226,59 @@ test('a rejected microphone start restores a usable retry button', async t => {
   const retry = f.q('fret-mic').onclick();
   assert.equal(f.audio.requests.length, 2);
   f.audio.requests[1].resolve(false); await retry;
+});
+
+test('daily beginner link opens the planned quiz, range and string without saving URL overrides', t => {
+  const day='2026-10-18';
+  const task=getDailyPlan({profile:{level:'beginner',goal:'notes',minutes:15,startedAt:day}},day).tasks.find(task=>task.kind==='fretboard');
+  assert.equal(task.href,'#fretboard?mode=find&range=3&strings=0&notes=natural');
+  const f=fixture(t,{range:12,strings:'5',notes:'all'},.9999,new URLSearchParams(task.href.split('?')[1]));
+  assert.equal(f.q('fret-range').value,3);
+  assert.equal(f.q('string-filter').value,'0');
+  assert.equal(f.q('note-filter').value,'natural');
+  assert.equal(f.q('show-notes').disabled,true);
+  assert.deepEqual(f.container.querySelectorAll('[data-mode]').filter(button=>button.classes.has('active')).map(button=>button.dataset.mode),['find']);
+  assert.ok(f.q('note-scale').buttons.every(button=>button.disabled));
+  assert.equal(f.q('fretboard').buttons.length,24);
+  assert.ok(f.q('fretboard').buttons.filter(button=>button.dataset.string!=='0').every(button=>button.disabled));
+  assert.deepEqual([f.target().si,f.target().fret],[0,3]);
+  assert.deepEqual(f.preferencesSaved,[]);
+});
+
+test('guided name quiz starts with a hidden marker and the requested accidental answer set', t => {
+  const f=fixture(t,{range:3,strings:'0',notes:'natural'},.9999,new URLSearchParams('mode=name&range=5&strings=4&notes=all'));
+  const marker=f.q('fretboard').buttons.find(button=>button.classes.has('quiz-marker'));
+  assert.deepEqual([marker.dataset.string,marker.dataset.fret],['4','5']);
+  assert.equal(f.q('fret-range').value,5);
+  assert.equal(f.q('show-notes').disabled,true);
+  assert.match(f.q('challenge').innerHTML,/NAME THE NOTE/);
+  assert.equal(f.q('challenge').querySelectorAll('[data-answer]').length,12);
+  assert.deepEqual(f.container.querySelectorAll('[data-mode]').filter(button=>button.classes.has('active')).map(button=>button.dataset.mode),['name']);
+  assert.deepEqual(f.preferencesSaved,[]);
+  f.mode('explore');
+  assert.equal(f.q('show-notes').disabled,false);
+  assert.ok(f.q('note-scale').buttons.every(button=>!button.disabled));
+});
+
+test('invalid guided values fall back independently to saved controls and explore mode', t => {
+  const f=fixture(t,{range:12,strings:'5',notes:'all'},.9999,new URLSearchParams('mode=__proto__&range=3.0&strings=6&notes=chromatic'));
+  assert.equal(f.q('fret-range').value,12);
+  assert.equal(f.q('string-filter').value,'5');
+  assert.equal(f.q('note-filter').value,'all');
+  assert.equal(f.q('show-notes').disabled,false);
+  assert.deepEqual(f.container.querySelectorAll('[data-mode]').filter(button=>button.classes.has('active')).map(button=>button.dataset.mode),['explore']);
+  assert.match(f.q('challenge').innerHTML,/EXPLORE AT YOUR OWN PACE/);
+  assert.deepEqual(f.preferencesSaved,[]);
+});
+
+test('daily fret links rotate quiz mode, adapt difficulty, and include weak accidental frets',()=>{
+  const day='2026-10-18';
+  const task=(level,positions={},startedAt=day)=>getDailyPlan({profile:{level,goal:'fingerstyle',minutes:15,startedAt},positions},day).tasks.find(task=>task.kind==='fretboard');
+  assert.equal(task('beginner',{},'2026-10-17').href,'#fretboard?mode=name&range=3&strings=0&notes=natural');
+  assert.equal(task('intermediate').href,'#fretboard?mode=find&range=5&strings=all&notes=natural');
+  assert.equal(task('advanced').href,'#fretboard?mode=find&range=12&strings=all&notes=all');
+  assert.equal(task('beginner',{'0:11':{correct:0,total:4}}).href,'#fretboard?mode=find&range=12&strings=0&notes=all');
+  assert.equal(task('beginner',{'5:5':{correct:0,total:4}}).href,'#fretboard?mode=find&range=5&strings=5&notes=natural');
+  const plan=getDailyPlan({profile:{level:'beginner',goal:'fingerstyle',minutes:15,startedAt:day}},day);
+  assert.deepEqual(plan.tasks.filter(task=>['chords','ear','fingerstyle'].includes(task.kind)).map(task=>task.href),['#chords','#ear','#fingerstyle']);
 });

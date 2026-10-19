@@ -215,3 +215,112 @@ test('blocked persistence preserves the session and clears its error after a suc
     assert.equal(store.today().total, 0);
   });
 });
+
+test('legacy progress gains a default profile and numeric string range values persist', async () => {
+  await withStore({ version: 2, seconds: 90, days: { [YESTERDAY]: activity() } }, async ({ store, reload, storage }) => {
+    assert.deepEqual(store.data.profile, { displayName: 'เพื่อนนักกีตาร์', level: 'beginner', goal: 'fingerstyle', minutes: 15, onboarded: false, startedAt: TODAY });
+    assert.deepEqual(Object.keys(store.data.learning.completedLessons), []);
+    assert.deepEqual(Object.keys(store.data.learning.plans), []);
+    assert.equal(store.data.seconds, 90);
+    assert.equal(storage.writes, 0);
+    assert.equal(store.setProfile({ displayName: '  นัด\u0000  ', level: 'intermediate', goal: 'ear', minutes: '20', onboarded: true, startedAt: YESTERDAY, unknown: 'ignore' }), true);
+    assert.deepEqual(store.data.profile, { displayName: 'นัด', level: 'intermediate', goal: 'ear', minutes: 20, onboarded: true, startedAt: YESTERDAY });
+    const writes = storage.writes;
+    assert.equal(store.setProfile({ displayName: '   ', level: 'expert', goal: 'invalid', minutes: 17, onboarded: 'true', startedAt: '2026-02-30' }), false);
+    assert.equal(store.setProfile(null), false);
+    assert.equal(storage.writes, writes);
+    store.preference('range', '12');
+    assert.equal(store.data.preferences.range, 12);
+    assert.equal((await reload()).store.data.profile.displayName, 'นัด');
+    assert.equal((await reload()).store.data.seconds, 90);
+  });
+});
+
+test('profiles, lesson completions and daily plans normalize untrusted snapshots', async () => {
+  const lessons = JSON.parse('{"__proto__":1,"constructor":2,"prototype":3,"lesson-one":100,"lesson.two":200,"bad id":300,"bad/path":400,"negative":-1,"string":"200","infinite":null}');
+  await withStore({ version: 2, profile: { displayName: 'N'.repeat(100), level: 'advanced', goal: 'notes', minutes: 30, onboarded: true, startedAt: '2026-02-30', unknown: true }, learning: { completedLessons: lessons, plans: { [TODAY]: ['lesson-one', 'lesson-one', 'bad id', 'lesson.two', 'extra'], [YESTERDAY]: [], '2026-02-30': ['lesson-one'], junk: ['lesson-one'] } }, metadata: { importedGuest: 'true' } }, ({ store }) => {
+    assert.equal(store.data.profile.displayName.length, 60);
+    assert.equal(store.data.profile.startedAt, TODAY);
+    assert.equal(store.data.profile.unknown, undefined);
+    assert.deepEqual(Object.keys(store.data.learning.completedLessons), ['lesson-one', 'lesson.two']);
+    assert.equal(store.data.learning.completedLessons['lesson-one'], 100);
+    assert.deepEqual(Object.keys(store.data.learning.plans), [TODAY]);
+    assert.deepEqual(store.data.learning.plans[TODAY], ['lesson-one', 'lesson.two']);
+    assert.equal({}.polluted, undefined);
+  });
+});
+
+test('lesson completion is idempotent and daily selections stay stable through completion and reload', async () => {
+  await withStore(undefined, async ({ store, storage, reload }) => {
+    assert.equal(store.completeLesson('intro-notes'), true);
+    const timestamp = store.data.learning.completedLessons['intro-notes'];
+    assert.equal(timestamp, Date.now());
+    const writes = storage.writes;
+    assert.equal(store.completeLesson('intro-notes'), false);
+    for (const id of ['__proto__', 'constructor', '', 'bad id', null, 42]) assert.equal(store.completeLesson(id), false);
+    assert.equal(storage.writes, writes);
+    assert.deepEqual(store.today(), emptyDay());
+    assert.deepEqual(store.data.history, []);
+    const first = store.getOrCreatePlan(TODAY, ['intro-notes', 'open-chords', 'ear-start']);
+    assert.deepEqual(first, ['intro-notes', 'open-chords']);
+    first.push('mutated');
+    store.completeLesson('open-chords');
+    assert.deepEqual(store.getOrCreatePlan(TODAY, ['different']), ['intro-notes', 'open-chords']);
+    assert.deepEqual(store.getOrCreatePlan('2026-02-30', ['intro-notes']), []);
+    assert.deepEqual(store.getOrCreatePlan(Symbol('invalid'), ['intro-notes']), []);
+    assert.deepEqual(store.getOrCreatePlan(YESTERDAY, [null, 'bad id']), []);
+    const restored = (await reload()).store;
+    assert.equal(restored.data.learning.completedLessons['intro-notes'], timestamp);
+    assert.deepEqual(restored.getOrCreatePlan(TODAY, ['different']), ['intro-notes', 'open-chords']);
+  });
+});
+
+test('progress and preferences stay in one local browser store', async () => {
+  await withStore(undefined, async ({ store, items, reload }) => {
+    store.record('ear', true, 'A4');
+    store.setProfile({ displayName: 'นักกีตาร์' });
+    store.preference('range', 12);
+    for (let i = 0; i < 3; i++) store.tick();
+    store.flush();
+    assert.equal(store.saveError, false);
+    assert.ok(items.has(KEY));
+    assert.equal(items.has(KEY + ':account:learner%2Fa'), false);
+    const restored = (await reload()).store;
+    assert.equal(restored.data.seconds, 3);
+    assert.equal(restored.today().total, 1);
+    assert.equal(restored.data.profile.displayName, 'นักกีตาร์');
+    assert.equal(restored.data.preferences.range, 12);
+  });
+});
+
+test('save subscribers receive immutable local snapshots and can unsubscribe safely', async () => {
+  await withStore(undefined, ({ store }) => {
+    const events = [];
+    const unsubscribe = store.subscribe(event => events.push(event));
+    const stopThrowing = store.subscribe(() => { throw new Error('observer failure'); });
+    assert.doesNotThrow(() => store.record('ear', true, 'A4'));
+    assert.equal(events.length, 1);
+    assert.ok(Object.isFrozen(events[0]));
+    assert.ok(Object.isFrozen(events[0].data.days[TODAY]));
+    assert.throws(() => { events[0].data.days[TODAY].ear = 900; }, TypeError);
+    const count = events.length;
+    unsubscribe(); stopThrowing();
+    store.flush();
+    assert.equal(events.length, count);
+  });
+});
+test('completed lessons count once per local day toward streak without inventing quiz activity', async () => {
+  const yesterdayAt = new NativeDate(2026, 9, 16, 23, 0, 0).getTime();
+  await withStore({ version: 2, learning: { completedLessons: { yesterday: yesterdayAt } } }, ({ store, setDate }) => {
+    assert.equal(store.streak(), 1);
+    store.completeLesson('today-first');
+    store.completeLesson('today-second');
+    assert.equal(store.streak(), 2);
+    assert.deepEqual(store.today(), emptyDay());
+    assert.deepEqual(store.totals(), { correct: 0, total: 0, sessions: 0 });
+    setDate(2026, 10, 18);
+    assert.equal(store.streak(), 2);
+    setDate(2026, 10, 19);
+    assert.equal(store.streak(), 0);
+  });
+});
